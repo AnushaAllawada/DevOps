@@ -1,0 +1,40 @@
+# to create virtual environment
+  #  python -m venv venv
+
+# activate the virtual environment using  
+#     venv\scripts\activate
+
+# install python packages for backend
+
+# if you create any new model make migrations and then run the code using
+
+    # python manage.py makemigrations
+    # python manage.py migrate
+
+    # python manage.py runserver
+
+    # to create a admin user use  :   python manage.py createsuperuser
+
+pip install asgiref==3.8.1
+pip install Django==5.1.7
+pip install django-cors-headers==4.7.0
+pip install djangorestframework==3.15.2
+pip install djangorestframework_simplejwt==5.5.0
+pip install drf-nested-routers==0.94.1
+pip install pillow==11.1.0
+pip install PyJWT==2.9.0
+pip install sqlparse==0.5.3
+pip install tzdata==2025.1
+pip install whitenoise==6.6.0
+pip install cryptography
+pip install pymysql
+
+
+# for backend install
+
+# npm install
+# npm install vite
+
+# to run frontend
+# make sure u r in this path to run frontend      \frontend1\tailwindcss4>
+# npm run dev

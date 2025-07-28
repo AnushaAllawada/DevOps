@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Following</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <header class="header bg-white shadow-sm p-4 flex items-center justify-between">
+        <a href="/profile/" class="text-blue-600 hover:text-blue-800 font-medium transition-colors duration-200" aria-label="Back to Profile">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+        </a>
+        <h1 class="text-xl font-semibold text-gray-800">Users You Follow</h1>
+        <div class="w-6"></div> <!-- Spacer for alignment -->
+    </header>
+    <div class="container max-w-md mx-auto px-4 py-6">
+        <div id="loading" class="flex justify-center items-center py-4 hidden">
+            <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+        </div>
+        <ul id="following-list" class="space-y-2" role="list" aria-label="List of users you follow"></ul>
+        <div id="error-message" class="text-red-600 text-center mt-4 hidden" role="alert">
+            Failed to load following list.
+            <button id="retry-button" class="ml-2 text-blue-600 hover:text-blue-800 underline" aria-label="Retry loading the following list">Retry</button>
+        </div>
+    </div>
+
+    <script>
+        async function loadFollowing() {
+            const token = localStorage.getItem('access_token');
+            const loading = document.getElementById('loading');
+            const followingList = document.getElementById('following-list');
+            const errorMessage = document.getElementById('error-message');
+
+            if (!token) {
+                window.location.href = '/login/';
+                return;
+            }
+
+            loading.classList.remove('hidden');
+            followingList.classList.add('hidden');
+            errorMessage.classList.add('hidden');
+
+            try {
+                const response = await fetch('/api/users/me/following/', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                    },
+                });
+
+                loading.classList.add('hidden');
+                followingList.classList.remove('hidden');
+
+                if (response.status === 401) {
+                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('refresh_token');
+                    window.location.href = '/login/';
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                followingList.innerHTML = '';
+
+                if (!data.results || !Array.isArray(data.results)) {
+                    throw new Error('Invalid data format: results is not an array');
+                }
+
+                if (data.results.length === 0) {
+                    followingList.innerHTML = '<li class="p-4 bg-white rounded-lg text-gray-600 text-center" role="listitem">You are not following anyone.</li>';
+                    return;
+                }
+
+                data.results.forEach(user => {
+                    if (!user.username) return; // Skip invalid user objects
+                    const li = document.createElement('li');
+                    li.className = 'flex items-center justify-between p-3 bg-white rounded-lg hover:bg-gray-100 transition-all duration-200 shadow-sm';
+                    li.setAttribute('role', 'listitem');
+                    const avatarUrl = user.profile_picture || '/media/profile_pics/';
+                    li.innerHTML = `
+                        <div class="flex items-center space-x-3">
+                            <img src="${avatarUrl}" class="w-10 h-10 rounded-full object-cover" alt="Profile picture of ${user.username}" onerror="this.src='/media/profile_pics/'">
+                            <div>
+                                <a href="/users/${user.username}/" class="text-gray-800 font-medium hover:text-blue-600 transition-colors duration-200">${user.username}</a>
+                                <p class="text-sm text-gray-500">Followers: ${user.followers_count || 0} | Following: ${user.following_count || 0}</p>
+                            </div>
+                        </div>
+                        <button class="unfollow-btn text-sm text-gray-600 hover:text-red-600 font-medium transition-colors duration-200 px-3 py-1 border border-gray-300 rounded-full hover:border-red-300" data-username="${user.username}" aria-label="Unfollow ${user.username}">Unfollow</button>
+                    `;
+                    followingList.appendChild(li);
+                });
+
+                // Add event listeners for unfollow buttons
+                document.querySelectorAll('.unfollow-btn').forEach(button => {
+                    button.addEventListener('click', async () => {
+                        const username = button.getAttribute('data-username');
+                        await unfollowUser(username, token);
+                    });
+                });
+
+            } catch (error) {
+                console.error('Error loading following list:', error);
+                loading.classList.add('hidden');
+                followingList.classList.add('hidden');
+                errorMessage.classList.remove('hidden');
+            }
+        }
+
+        async function unfollowUser(username, token) {
+            const loading = document.getElementById('loading');
+            const errorMessage = document.getElementById('error-message');
+
+            loading.classList.remove('hidden');
+            errorMessage.classList.add('hidden');
+
+            try {
+                const response = await fetch(`/api/users/${username}/unfollow/`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                loading.classList.add('hidden');
+
+                if (response.ok) {
+                    loadFollowing(); // Refresh the list
+                } else {
+                    errorMessage.classList.remove('hidden');
+                    errorMessage.innerHTML = 'Failed to unfollow user. <button id="retry-button" class="ml-2 text-blue-600 hover:text-blue-800 underline" aria-label="Retry loading the following list">Retry</button>';
+                }
+            } catch (error) {
+                loading.classList.add('hidden');
+                errorMessage.classList.remove('hidden');
+                errorMessage.innerHTML = 'Failed to unfollow user. <button id="retry-button" class="ml-2 text-blue-600 hover:text-blue-800 underline" aria-label="Retry loading the following list">Retry</button>';
+            }
+            addRetryListener();
+        }
+
+        function addRetryListener() {
+            const retryButton = document.getElementById('retry-button');
+            if (retryButton) {
+                retryButton.addEventListener('click', () => {
+                    loadFollowing();
+                });
+            }
+        }
+
+        // Load following list on page load
+        loadFollowing();
+    </script>
+</body>
+</html>

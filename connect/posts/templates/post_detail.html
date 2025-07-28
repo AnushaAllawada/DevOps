@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Post Detail - Connect</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <header class="header bg-white shadow-sm p-4 flex items-center justify-between">
+        <a href="/home/" class="text-blue-600 hover:text-blue-800" aria-label="Back to Home">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+        </a>
+        <h1 class="text-xl font-semibold text-gray-800">Post</h1>
+        <div class="w-6"></div>
+    </header>
+    <div class="container max-w-md mx-auto px-4 py-6">
+        <div id="loading" class="flex justify-center items-center py-4 hidden">
+            <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+        </div>
+        <div id="post-detail" class="bg-white rounded-lg shadow-sm p-4 mb-4"></div>
+        <div id="comment-form" class="mb-4">
+            <textarea id="comment-input" class="w-full p-2 border rounded-lg" placeholder="Add a comment..." aria-label="Comment input"></textarea>
+            <button id="submit-comment" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-full hover:bg-blue-700">Post</button>
+        </div>
+        <ul id="comments-list" class="space-y-4" role="list" aria-label="List of comments"></ul>
+        <div id="error-message" class="text-red-600 text-center mt-4 hidden" role="alert">
+            Failed to load post or comments.
+            <button id="retry-button" class="ml-2 text-blue-600 hover:text-blue-800 underline" aria-label="Retry loading post">Retry</button>
+        </div>
+    </div>
+
+    <script>
+        async function loadPostAndComments() {
+            const token = localStorage.getItem('access_token');
+            const loading = document.getElementById('loading');
+            const postDetail = document.getElementById('post-detail');
+            const commentsList = document.getElementById('comments-list');
+            const errorMessage = document.getElementById('error-message');
+            const postId = window.location.pathname.split('/')[2];
+
+            if (!token) {
+                window.location.href = '/login/';
+                return;
+            }
+
+            loading.classList.remove('hidden');
+            postDetail.classList.add('hidden');
+            commentsList.classList.add('hidden');
+            errorMessage.classList.add('hidden');
+
+            try {
+                // Load post
+                const postResponse = await fetch(`/api/posts/${postId}/`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                if (postResponse.status === 401) {
+                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('refresh_token');
+                    window.location.href = '/login/';
+                    return;
+                }
+
+                if (!postResponse.ok) {
+                    throw new Error(`HTTP error! status: ${postResponse.status}`);
+                }
+
+                const post = await postResponse.json();
+                postDetail.classList.remove('hidden');
+                const imageHtml = post.image ? `<img src="${post.image}" class="w-full rounded-lg mb-2 object-cover" alt="Post image">` : '';
+                const likeIcon = post.is_liked ? 'text-red-500' : 'text-gray-500';
+                postDetail.innerHTML = `
+                    <div class="flex items-center space-x-3 mb-2">
+                        <img src="${post.author.profile_picture || '/media/profile_pics/default-avatar.png'}" class="w-10 h-10 rounded-full object-cover" alt="Profile picture of ${post.author.username}" onerror="this.src='/media/profile_pics/default-avatar.png'">
+                        <a href="/users/${post.author.username}/" class="text-gray-800 font-medium hover:text-blue-600">${post.author.username}</a>
+                    </div>
+                    ${imageHtml}
+                    <p class="text-gray-700 mb-2">${post.content || ''}</p>
+                    <div class="flex items-center space-x-4 text-sm text-gray-500">
+                        <span>${post.likes_count} likes</span>
+                        <span>${post.comments_count} comments</span>
+                    </div>
+                    <div class="flex space-x-4 mt-2">
+                        <button class="like-btn ${likeIcon} hover:text-red-600" data-post-id="${post.id}" aria-label="${post.is_liked ? 'Unlike' : 'Like'} post">
+                            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                            </svg>
+                        </button>
+                    </div>
+                `;
+
+                // Load comments
+                const commentsResponse = await fetch(`/api/posts/${postId}/comments/`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+
+                if (!commentsResponse.ok) {
+                    throw new Error(`HTTP error! status: ${commentsResponse.status}`);
+                }
+
+                const comments = await commentsResponse.json();
+                commentsList.classList.remove('hidden');
+                commentsList.innerHTML = '';
+
+                if (comments.length === 0) {
+                    commentsList.innerHTML = '<li class="text-gray-600 text-center">No comments yet.</li>';
+                } else {
+                    comments.forEach(comment => {
+                        const li = document.createElement('li');
+                        li.className = 'bg-white rounded-lg p-3';
+                        li.setAttribute('role', 'listitem');
+                        li.innerHTML = `
+                            <div class="flex items-center space-x-3 mb-2">
+                                <img src="${comment.author.profile_picture || '/media/profile_pics/default-avatar.png'}" class="w-8 h-8 rounded-full object-cover" alt="Profile picture of ${comment.author.username}" onerror="this.src='/media/profile_pics/default-avatar.png'">
+                                <div>
+                                    <a href="/users/${comment.author.username}/" class="text-gray-800 font-medium hover:text-blue-600">${comment.author.username}</a>
+                                    <p class="text-sm text-gray-700">${comment.content}</p>
+                                </div>
+                            </div>
+                            <button class="reply-btn text-sm text-blue-600 hover:underline" data-comment-id="${comment.id}" aria-label="Reply to comment">Reply</button>
+                        `;
+                        if (comment.replies && comment.replies.length > 0) {
+                            const repliesUl = document.createElement('ul');
+                            repliesUl.className = 'ml-6 mt-2 space-y-2';
+                            comment.replies.forEach(reply => {
+                                const replyLi = document.createElement('li');
+                                replyLi.className = 'flex items-center space-x-3';
+                                replyLi.innerHTML = `
+                                    <img src="${reply.author.profile_picture || '/media/profile_pics/default-avatar.png'}" class="w-6 h-6 rounded-full object-cover" alt="Profile picture of ${reply.author.username}" onerror="this.src='/media/profile_pics/default-avatar.png'">
+                                    <div>
+                                        <a href="/users/${reply.author.username}/" class="text-gray-800 font-medium hover:text-blue-600 text-sm">${reply.author.username}</a>
+                                        <p class="text-sm text-gray-700">${reply.content}</p>
+                                    </div>
+                                `;
+                                repliesUl.appendChild(replyLi);
+                            });
+                            li.appendChild(repliesUl);
+                        }
+                        commentsList.appendChild(li);
+                    });
+                }
+
+                document.querySelectorAll('.like-btn').forEach(button => {
+                    button.addEventListener('click', async () => {
+                        const postId = button.getAttribute('data-post-id');
+                        await toggleLike(postId, token, button);
+                    });
+                });
+
+                document.querySelectorAll('.reply-btn').forEach(button => {
+                    button.addEventListener('click', () => {
+                        const commentId = button.getAttribute('data-comment-id');
+                        const replyForm = document.createElement('div');
+                        replyForm.className = 'ml-6 mt-2';
+                        replyForm.innerHTML = `
+                            <textarea class="reply-input w-full p-2 border rounded-lg" placeholder="Add a reply..." aria-label="Reply input"></textarea>
+                            <button class="submit-reply mt-2 bg-blue-600 text-white px-4 py-2 rounded-full hover:bg-blue-700" data-comment-id="${commentId}">Post Reply</button>
+                        `;
+                        button.after(replyForm);
+                        replyForm.querySelector('.submit-reply').addEventListener('click', async () => {
+                            await submitReply(commentId, token, replyForm);
+                        });
+                    });
+                });
+
+                document.getElementById('submit-comment').addEventListener('click', async () => {
+                    const content = document.getElementById('comment-input').value.trim();
+                    if (content) {
+                        await submitComment(postId, token, content);
+                    }
+                });
+
+            } catch (error) {
+                console.error('Error loading post/comments:', error);
+                loading.classList.add('hidden');
+                postDetail.classList.add('hidden');
+                commentsList.classList.add('hidden');
+                errorMessage.classList.remove('hidden');
+            }
+        }
+
+        async function submitComment(postId, token, content) {
+            try {
+                const response = await fetch(`/api/posts/${postId}/comments/`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ content }),
+                });
+
+                if (response.ok) {
+                    document.getElementById('comment-input').value = '';
+                    loadPostAndComments();
+                } else {
+                    document.getElementById('error-message').classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Error submitting comment:', error);
+                document.getElementById('error-message').classList.remove('hidden');
+            }
+        }
+
+        async function submitReply(commentId, token, replyForm) {
+            const content = replyForm.querySelector('.reply-input').value.trim();
+            if (!content) return;
+
+            try {
+                const response = await fetch(`/api/posts/comments/${commentId}/reply/`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ content }),
+                });
+
+                if (response.ok) {
+                    replyForm.remove();
+                    loadPostAndComments();
+                } else {
+                    document.getElementById('error-message').classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Error submitting reply:', error);
+                document.getElementById('error-message').classList.remove('hidden');
+            }
+        }
+
+        async function toggleLike(postId, token, button) {
+            try {
+                const response = await fetch(`/api/posts/${postId}/like/`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const postDiv = button.closest('div[role="listitem"]');
+                    postDiv.querySelector('span').textContent = `${data.likes_count} likes`;
+                    button.className = `like-btn ${data.is_liked ? 'text-red-500' : 'text-gray-500'} hover:text-red-600`;
+                    button.setAttribute('aria-label', data.is_liked ? 'Unlike post' : 'Like post');
+                } else {
+                    document.getElementById('error-message').classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Error toggling like:', error);
+                document.getElementById('error-message').classList.remove('hidden');
+            }
+        }
+
+        function addRetryListener() {
+            const retryButton = document.getElementById('retry-button');
+            if (retryButton) {
+                retryButton.addEventListener('click', () => {
+                    loadPostAndComments();
+                });
+            }
+        }
+
+        loadPostAndComments();
+    </script>
+</body>
+</html>
